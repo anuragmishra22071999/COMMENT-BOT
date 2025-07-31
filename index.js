@@ -4,35 +4,44 @@ const dotenv = require("dotenv");
 const express = require("express");
 
 dotenv.config();
-
 const app = express();
-const PORT = process.env.PORT || 3000;
 
-const commentFile = "comment.txt";
-const tokenFile = "token.txt";
-const interval = parseInt(process.env.INTERVAL) || 5000;
-const postLink = process.env.POST_LINK;
+const POST_LINK = process.env.POST_LINK;
+const COMMENT_FILE = "comment.txt";
+const TOKEN_FILE = "token.txt";
+const INTERVAL = 40000; // 40 seconds
+const PORT = 3000;
 
-// ✅ Function to extract Post ID from post link
-function extractPostID(link) {
-  const match = link.match(/\/posts\/(\d+)/);
-  if (match) return match[1];
+// 🔍 Resolve post ID from pfbid or normal links
+async function resolvePostID(link) {
+  if (link.includes("/posts/") && link.includes("pfbid")) {
+    try {
+      const res = await axios.get(link);
+      const redirected = res.request.res.responseUrl;
+      const match = redirected.match(/\/posts\/(\d+)/);
+      if (match) return match[1];
+    } catch (err) {
+      console.log("❌ Could not resolve post ID from pfbid:", err.message);
+    }
+  }
+
+  const standard = link.match(/\/posts\/(\d+)/);
+  if (standard) return standard[1];
+
   const story = link.match(/story_fbid=(\d+)&id=(\d+)/);
   if (story) return story[1];
+
   return null;
 }
 
 async function startBot() {
-  const token = fs.readFileSync(tokenFile, "utf-8").trim();
-  const comments = fs.readFileSync(commentFile, "utf-8").split("\n").filter(Boolean);
-  const postId = extractPostID(postLink);
+  const token = fs.readFileSync(TOKEN_FILE, "utf-8").trim();
+  const comments = fs.readFileSync(COMMENT_FILE, "utf-8").split("\n").filter(Boolean);
+  const postId = await resolvePostID(POST_LINK);
 
-  if (!postId) {
-    console.log("❌ Post ID extract nahi hua. Link sahi daalo.");
-    return;
-  }
+  if (!postId) return console.error("❌ Post ID not found!");
 
-  console.log(`🚀 Bot shuru ho gaya: Post ID => ${postId}`);
+  console.log(`🚀 Bot started on Post ID: ${postId}`);
   let i = 0;
 
   setInterval(async () => {
@@ -42,21 +51,20 @@ async function startBot() {
         message,
         access_token: token
       });
-      console.log(`✅ Comment bheja: "${message}" | ID: ${res.data.id}`);
+      console.log(`✅ [${new Date().toLocaleTimeString()}] Commented: "${message}" → ID: ${res.data.id}`);
     } catch (err) {
-      console.log("❌ Error:", err.response?.data?.error?.message || err.message);
+      console.log("❌ Comment failed:", err.response?.data?.error?.message || err.message);
     }
     i++;
-  }, interval);
+  }, INTERVAL);
 }
 
-// Express uptime route
+// Uptime Express route
 app.get("/", (req, res) => {
-  res.send("🔥 Facebook Comment Bot is Live!");
+  res.send("🔥 Facebook Comment Bot is running!");
 });
 
-// Start server and bot
 app.listen(PORT, () => {
-  console.log(`🌐 Server running on port ${PORT}`);
+  console.log(`🌐 Uptime server live at http://localhost:${PORT}`);
   startBot();
 });
